@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import supabase from "./supabase";
 import "./style.css";
 
 const initialFacts = [
@@ -50,19 +51,49 @@ function Counter() {
 
 function App() {
   const [showForm, setShowForm] = useState(false);
+  const [facts, setFacts] = useState([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [currentCategory, setCurrentCategory] = useState("all");
+
+  useEffect(
+    function () {
+      async function getFacts() {
+        setIsLoading(true);
+
+        let query = supabase.from("facts").select("*");
+
+        if (currentCategory !== "all")
+          query = query.eq("category", currentCategory);
+
+        const { data: facts, error } = await query
+          .order("votesInteresting", { ascending: false })
+          .limit(1000);
+        if (!error) setFacts(facts);
+        else alert("There was a problem getting data.");
+        setIsLoading(false);
+      }
+      getFacts(facts);
+    },
+    [currentCategory]
+  );
 
   return (
     <>
       <Header showForm={showForm} setShowForm={setShowForm} />
-
-      {showForm ? <NewFactForm /> : null}
+      {showForm ? (
+        <NewFactForm setFacts={setFacts} setShowForm={setShowForm} />
+      ) : null}
 
       <main className="main">
-        <CategoryFilter />
-        <FactList />
+        <CategoryFilter setCurrentCategory={setCurrentCategory} />
+        {isLoading ? <Loader /> : <FactList facts={facts} />}
       </main>
     </>
   );
+}
+
+function Loader() {
+  return <p className="message">Loading...</p>;
 }
 
 function Header({ showForm, setShowForm }) {
@@ -96,15 +127,45 @@ const CATEGORIES = [
   { name: "news", color: "#8b5cf6" },
 ];
 
-function NewFactForm() {
+function isValidHttpUrl(string) {
+  let url;
+
+  try {
+    url = new URL(string);
+  } catch (_) {
+    return false;
+  }
+
+  return url.protocol === "http:" || url.protocol === "https:";
+}
+
+function NewFactForm({ setFacts, setShowForm }) {
   const [text, setText] = useState("");
-  const [source, setSource] = useState("");
+  const [source, setSource] = useState("http://example.com");
   const [category, setCategory] = useState("");
   const textLength = text.length;
 
   function handleSubmit(e) {
     e.preventDefault();
     console.log(text, source, category);
+
+    if (text && isValidHttpUrl(source) && category && textLength <= 200) {
+      const newFact = {
+        id: Math.round(Math.random() * 10000000),
+        text,
+        source,
+        category,
+        votesInteresting: 0,
+        votesMindblowing: 0,
+        votesFalse: 0,
+        createdIn: new Date().getFullYear(),
+      };
+      setFacts((facts) => [newFact, ...facts]);
+      setText("");
+      setSource("");
+      setCategory("");
+      setShowForm(false);
+    }
   }
 
   return (
@@ -135,18 +196,24 @@ function NewFactForm() {
   );
 }
 
-function CategoryFilter() {
+function CategoryFilter({ setCurrentCategory }) {
   return (
     <aside>
       <ul>
         <li className="category">
-          <button className="btn btn-all-categories">All</button>
+          <button
+            className="btn btn-all-categories"
+            onClick={() => setCurrentCategory("all")}
+          >
+            All
+          </button>
         </li>
         {CATEGORIES.map((cat) => (
           <li key={cat.name} className="category">
             <button
               className="btn btn-category"
               style={{ backgroundColor: cat.color }}
+              onClick={() => setCurrentCategory(cat.name)}
             >
               {cat.name}
             </button>
@@ -157,9 +224,13 @@ function CategoryFilter() {
   );
 }
 
-function FactList() {
-  // TEMPORARY
-  const facts = initialFacts;
+function FactList({ facts }) {
+  if (facts.length === 0)
+    return (
+      <p className="message">
+        No facts for this category yet! Create the first one✌️
+      </p>
+    );
 
   return (
     <section>
